@@ -21,11 +21,14 @@ matrix:
     language: shell
     before_install:
     - choco install python
-    - pip3 install --user -U pip
-    - pip3 install --user coveralls
-    - pip3 install --user pytest
+    - python -m pip install --user -U pip
+    - python -m pip install --user coveralls
+    - python -m pip install --user pytest pytest-asyncio pytest-cov
+    - python -m pip install --user Sphinx sphinxcontrib-napoleon sphinxcontrib-zopeext
+    - python -m pip install --user -r requirements.txt
     env: PATH=/c/Python37:/c/Python37/Scripts:/c/Users/travis/AppData/Roaming/Python/Python37/Scripts:$PATH
 install:
+- pip3 install -r requirements.txt
 - pip3 install pytest pytest-asyncio pytest-cov
 - pip3 install coveralls
 - pip3 install Sphinx sphinxcontrib-napoleon sphinxcontrib-zopeext

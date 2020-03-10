@@ -92,3 +92,29 @@ async def test_zmqclient(server, event_loop):
         await c.error()
     with pytest.raises(QuLabRPCServerError):
         await c.serverError()
+
+
+@pytest.fixture()
+def server2(event_loop):
+    s = ZMQServer(port=8765, loop=event_loop)
+    s.set_module(MySrv())
+    s.start()
+    yield s
+    s.close()
+
+
+@pytest.mark.asyncio
+async def test_zmqserver_port(server2, event_loop):
+    assert server2.port == 8765
+    c = ZMQClient('tcp://127.0.0.1:%d' % server2.port,
+                  timeout=2,
+                  loop=event_loop)
+    fut = asyncio.ensure_future(c.sleep(100), loop=event_loop)
+    await asyncio.sleep(0.1)
+    n = len(server2.tasks.keys())
+    assert n != 0
+    try:
+        await fut
+    except:
+        await asyncio.sleep(0.1)
+    assert n > len(server2.tasks.keys())

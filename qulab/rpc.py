@@ -400,11 +400,12 @@ class RPCServerMixin(RPCMixin):
 
 
 class ZMQServer(RPCServerMixin):
-    def __init__(self, loop=None):
+    def __init__(self, bind='*', port=None, loop=None):
         self.zmq_main_task = None
         self.zmq_ctx = None
         self.zmq_socket = None
-        self._port = 0
+        self.bind = bind
+        self._port = 0 if port is None else port
         self._loop = loop or asyncio.get_event_loop()
         self._module = None
         self._executor = None
@@ -456,7 +457,11 @@ class ZMQServer(RPCServerMixin):
     async def run(self):
         with self.zmq_ctx.socket(zmq.ROUTER, io_loop=self._loop) as sock:
             sock.setsockopt(zmq.LINGER, 0)
-            self._port = sock.bind_to_random_port('tcp://*')
+            addr = f"tcp://{self.bind}" if self._port == 0 else f"tcp://{self.bind}:{self._port}"
+            if self._port != 0:
+                sock.bind(addr)
+            else:
+                self._port = sock.bind_to_random_port(addr)
             self.set_socket(sock)
             while True:
                 addr, data = await sock.recv_multipart()
