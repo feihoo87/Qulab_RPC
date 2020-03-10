@@ -10,6 +10,11 @@ matrix:
     python: 3.7
     dist: xenial
     env: DEPLOY=yes
+  - name: Python 3.8 on Xenial Linux
+    os: linux
+    python: 3.8
+    dist: xenial
+    env: DEPLOY=yes
   - name: Python on macOS
     os: osx
     osx_image: xcode10.2
@@ -20,13 +25,13 @@ matrix:
     os: windows
     language: shell
     before_install:
-    - choco install python
+    - choco install python --version 3.8.0
     - python -m pip install --user -U pip
     - python -m pip install --user coveralls
     - python -m pip install --user pytest pytest-asyncio pytest-cov
     - python -m pip install --user Sphinx sphinxcontrib-napoleon sphinxcontrib-zopeext
     - python -m pip install --user -r requirements.txt
-    env: PATH=/c/Python37:/c/Python37/Scripts:/c/Users/travis/AppData/Roaming/Python/Python37/Scripts:$PATH
+    env: PATH=/c/Python38:/c/Python38/Scripts:/c/Users/travis/AppData/Roaming/Python/Python38/Scripts:$PATH
 install:
 - pip3 install -r requirements.txt
 - pip3 install pytest pytest-asyncio pytest-cov
