@@ -96,8 +96,8 @@ def encode_ndarray(x):
 def decode_ndarray(buff):
     t, shape, buff = unpackz(buff)
     x = np.frombuffer(buff)
-    x.shape = shape
     x.dtype = _dtype_map2[t]
+    x.shape = shape
     return x
 
 
