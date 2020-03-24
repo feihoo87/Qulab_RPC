@@ -1,6 +1,8 @@
+import asyncio
+
 import pytest
 
-from qulab.rpc import *
+from qurpc import *
 
 
 class Error(QuLabRPCError):
@@ -91,7 +93,11 @@ async def test_zmqclient(server, event_loop):
     with pytest.raises(Error):
         await c.error()
     with pytest.raises(QuLabRPCServerError):
-        await c.serverError()
+        try:
+            await c.serverError()
+        except QuLabRPCServerError as e:
+            assert isinstance(e._repr_markdown_(), str)
+            raise e
 
 
 @pytest.fixture()

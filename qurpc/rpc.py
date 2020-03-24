@@ -1,49 +1,19 @@
 import asyncio
 import functools
+import inspect
 import logging
-import os
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable
 from concurrent.futures import ThreadPoolExecutor
-from hashlib import sha1
 
 import zmq
 import zmq.asyncio
 
 from .exceptions import QuLabRPCError, QuLabRPCServerError, QuLabRPCTimeout
 from .serialize import pack, unpack
+from .utils import acceptArg, randomID
 
 log = logging.getLogger(__name__)  # pylint: disable=invalid-name
-
-
-def acceptArg(f, name, keyword=True):
-    """
-    Test if argument is acceptable by function.
-
-    Args:
-        f: callable
-            function
-        name: str
-            argument name
-    """
-    sig = inspect.signature(f)
-    for param in sig.parameters.values():
-        if param.name == name and param.kind != param.VAR_POSITIONAL:
-            return True
-        elif param.kind == param.VAR_KEYWORD:
-            return True
-        elif param.kind == param.VAR_POSITIONAL and not keyword:
-            return True
-    return False
-
-
-def randomID():
-    """
-    Generate a random msg ID.
-    """
-    msgID = sha1(os.urandom(32)).digest()
-    return msgID
-
 
 # message type
 

@@ -69,8 +69,8 @@ class QuLabRPCServerError(QuLabRPCError):
         return '\n'.join([
             '```python',
             '---------------------------------------------------------------------------',
-            f'QuLabRPCServerError({args[0]})               Server raise:{args[1]}',
-            f'{args[2]}',
+            f'QuLabRPCServerError({self.args[0]})               Server raise:{self.args[1]}',
+            f'{self.args[2]}',
             '---------------------------------------------------------------------------',
             '```',
         ])

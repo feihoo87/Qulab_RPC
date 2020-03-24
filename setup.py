@@ -1,7 +1,7 @@
 from codecs import open
 from os import path
 
-from setuptools import find_namespace_packages, setup
+from setuptools import find_packages, setup
 
 here = path.abspath(path.dirname(__file__))
 
@@ -18,7 +18,7 @@ requirements = [
 
 setup(
     name="QuLab_RPC",
-    version='1.1.0',
+    version='1.2.0',
     author="feihoo87",
     author_email="feihoo87@gmail.com",
     url="https://github.com/feihoo87/QuLab_RPC",
@@ -27,7 +27,7 @@ setup(
     description="RPC for QuLab",
     long_description=long_description,
     long_description_content_type='text/markdown',
-    packages = find_namespace_packages(include=['qulab.*']),
+    packages = find_packages(),
     include_package_data = True,
     install_requires=requirements,
     extras_require={

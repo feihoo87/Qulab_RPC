@@ -3,7 +3,7 @@ import pickle
 import numpy as np
 import pytest
 
-from qulab.serialize import *
+from qurpc.serialize import *
 
 
 def test_serialize():
