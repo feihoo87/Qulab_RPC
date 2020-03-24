@@ -4,7 +4,6 @@ import struct
 from typing import Any, Callable, TypeVar
 
 import msgpack
-import numpy as np
 
 __index = 0
 __pack_handlers = {}
@@ -79,36 +78,41 @@ def unpackz(buff: bytes) -> Any:
     return unpack(gzip.decompress(buff))
 
 
-dtypes = [
-    np.bool, np.int8, np.int16, np.int32, np.int64, np.uint8, np.uint16,
-    np.uint32, np.uint64, np.float16, np.float32, np.float64, np.complex64,
-    np.complex128
-]
-
-_dtype_map1 = {t: i for i, t in enumerate(dtypes)}
-_dtype_map2 = {i: t for i, t in enumerate(dtypes)}
-
-
-def encode_ndarray(x):
-    return packz((_dtype_map1[x.dtype.type], x.shape, x.tobytes()))
-
-
-def decode_ndarray(buff):
-    t, shape, buff = unpackz(buff)
-    x = np.frombuffer(buff)
-    x.dtype = _dtype_map2[t]
-    x.shape = shape
-    return x
-
-
-register(np.ndarray, encode_ndarray, decode_ndarray)
-
-
 def encode_excepion(e: Exception) -> bytes:
     e.__traceback__ = None
     return pickle.dumps(e)
 
 
 register(Exception, encode_excepion)
+
+try:
+    import numpy as np
+
+    dtypes = [
+        np.bool, np.int8, np.int16, np.int32, np.int64, np.uint8, np.uint16,
+        np.uint32, np.uint64, np.float16, np.float32, np.float64, np.complex64,
+        np.complex128
+    ]
+
+    _dtype_map1 = {t: i for i, t in enumerate(dtypes)}
+    _dtype_map2 = {i: t for i, t in enumerate(dtypes)}
+
+    def encode_ndarray(x):
+        dtype = x.dtype
+        if isinstance(dtype, np.dtype):
+            dtype = dtype.type
+        return packz((_dtype_map1[dtype], x.shape, x.tobytes()))
+
+    def decode_ndarray(buff):
+        t, shape, buff = unpackz(buff)
+        x = np.frombuffer(buff)
+        x.dtype = _dtype_map2[t]
+        x.shape = shape
+        return x
+
+    register(np.ndarray, encode_ndarray, decode_ndarray)
+
+finally:
+    pass
 
 __all__ = ['register', 'pack', 'unpack', 'packz', 'unpackz']

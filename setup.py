@@ -12,7 +12,6 @@ with open(path.join(here, 'README.md'), encoding='utf-8') as f:
 
 requirements = [
     'msgpack>=1.0.0',
-    'numpy>=1.13.3',
     'pyzmq>=18.0.1',
 ]
 
