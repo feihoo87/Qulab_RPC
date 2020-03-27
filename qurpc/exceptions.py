@@ -1,4 +1,5 @@
 import inspect
+from collections import deque
 
 
 def _parse_frame(frame):
@@ -28,13 +29,21 @@ def _parse_traceback(err):
 
 
 def _format_traceback(err):
-    lines = []
+    lines = deque(maxlen=15)
+    post_lines = -1
     for frame in _parse_traceback(err):
         lines.append(f"{frame['filename']} in {frame['name']}")
         for n, line in enumerate(frame['source'].split('\n')):
             lno = n + frame['firstlineno']
-            lines.append(
-                f"{'->' if lno==frame['lineno'] else '  '}{lno:3d} {line}")
+            if lno == frame['lineno']:
+                lines.append(f"->{lno:3d} {line}")
+                post_lines = 0
+            else:
+                lines.append(f"  {lno:3d} {line}")
+                if post_lines >= 0:
+                    post_lines += 1
+            if post_lines >= 7:
+                break
     traceback_text = '\n'.join(lines)
     args = list(err.args)
     args.append(traceback_text)
