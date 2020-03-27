@@ -82,7 +82,6 @@ class RPCMixin(ABC):
         """
         if msgID in self.tasks:
             self.tasks[msgID].cancel()
-            del self.tasks[msgID]
 
     def createPending(self, addr, msgID, timeout=1, cancelRemote=True):
         """
@@ -93,17 +92,25 @@ class RPCMixin(ABC):
                                self.loop.call_later(timeout,
                                                     self.cancelPending, addr,
                                                     msgID, cancelRemote))
+
+        def clean(fut, msgID=msgID):
+            if msgID in self.pending:
+                del self.pending[msgID]
+
+        fut.add_done_callback(clean)
+
         return fut
 
     def cancelPending(self, addr, msgID, cancelRemote):
         """
         Give up when request timeout and try to cancel remote task.
         """
-        fut, timeout = self.pending[msgID]
-        if cancelRemote:
-            self.cancelRemoteTask(addr, msgID)
-        fut.set_exception(QuLabRPCTimeout('Time out.'))
-        del self.pending[msgID]
+        if msgID in self.pending:
+            fut, timeout = self.pending[msgID]
+            if cancelRemote:
+                self.cancelRemoteTask(addr, msgID)
+            if not fut.done():
+                fut.set_exception(QuLabRPCTimeout('Time out.'))
 
     def cancelRemoteTask(self, addr, msgID):
         """
@@ -191,8 +198,8 @@ class RPCMixin(ABC):
         if source in self.pending:
             fut, timeout = self.pending[source]
             timeout.cancel()
-            fut.set_result(True)
-            del self.pending[source]
+            if not fut.done():
+                fut.set_result(True)
 
     def on_cancel(self, source, data):
         msgID = data[:20]
@@ -232,13 +239,13 @@ class RPCClientMixin(RPCMixin):
         if msgID not in self.pending:
             return
         fut, timeout = self.pending[msgID]
-        result = unpack(msg)
         timeout.cancel()
-        if isinstance(result, Exception):
-            fut.set_exception(result)
-        else:
-            fut.set_result(result)
-        del self.pending[msgID]
+        result = unpack(msg)
+        if not fut.done():
+            if isinstance(result, Exception):
+                fut.set_exception(result)
+            else:
+                fut.set_result(result)
 
 
 class RPCServerMixin(RPCMixin):
@@ -266,14 +273,11 @@ class RPCServerMixin(RPCMixin):
         Received a request from source.
         """
         msgID, msg = data[:20], data[20:]
-        try:
-            method, args, kw = self._unpack_request(msg)
-            self.createTask(msgID,
-                            self.handle_request(source, msgID, method, *args,
-                                                **kw),
-                            timeout=kw.get('timeout', 0))
-        except Exception as e:
-            self.response(source, msgID, pack(QuLabRPCServerError.make(e)))
+        method, args, kw = self._unpack_request(msg)
+        self.createTask(msgID,
+                        self.handle_request(source, msgID, method, *args,
+                                            **kw),
+                        timeout=kw.get('timeout', 0))
 
     async def handle_request(self, source, msgID, method, *args, **kw):
         """
@@ -288,8 +292,6 @@ class RPCServerMixin(RPCMixin):
             else:
                 result = await self.loop.run_in_executor(
                     self.executor, functools.partial(func, *args, **kw))
-            if isinstance(result, Awaitable):
-                result = await result
         except QuLabRPCError as e:
             result = e
         except Exception as e:
