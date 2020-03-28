@@ -18,7 +18,7 @@ requirements = [
 
 setup(
     name="QuLab_RPC",
-    version='1.3.2',
+    version='1.3.3',
     author="feihoo87",
     author_email="feihoo87@gmail.com",
     url="https://github.com/feihoo87/QuLab_RPC",
