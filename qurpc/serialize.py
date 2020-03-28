@@ -112,7 +112,7 @@ try:
 
     register(np.ndarray, encode_ndarray, decode_ndarray)
 
-finally:
+except:
     pass
 
 __all__ = ['register', 'pack', 'unpack', 'packz', 'unpackz']
