@@ -52,13 +52,7 @@ class RPCMixin(ABC):
         for task in self.tasks.values():
             try:
                 task.cancel()
-            finally:
-                pass
-        for fut, timeout in self.pending.values():
-            try:
-                fut.cancel()
-                timeout.cancel()
-            finally:
+            except:
                 pass
 
     def createTask(self, msgID, coro, timeout=0):
@@ -219,9 +213,7 @@ class RPCClientMixin(RPCMixin):
     def set_timeout(self, timeout=10):
         self._client_defualt_timeout = timeout
 
-    def remoteCall(self, addr, methodNane, args=(), kw=None):
-        if kw is None:
-            kw = {}
+    def remoteCall(self, addr, methodNane, args=(), kw={}):
         if 'timeout' in kw:
             timeout = kw['timeout']
         else:
@@ -370,19 +362,7 @@ class ZMQServer(RPCServerMixin):
                 self.handle(addr, data)
 
 
-class ZMQRPCCallable:
-    def __init__(self, methodNane, owner):
-        self.methodNane = methodNane
-        self.owner = owner
-
-    def __call__(self, *args, **kw):
-        return self.owner.performMethod(self.methodNane, args, kw)
-
-    def __getattr__(self, name):
-        return ZMQRPCCallable(f"{self.methodNane}.{name}", self.owner)
-
-
-class ZMQClient(RPCClientMixin):
+class _ZMQClient(RPCClientMixin):
     def __init__(self, addr, timeout=10, loop=None):
         self._loop = loop or asyncio.get_event_loop()
         self.set_timeout(timeout)
@@ -392,6 +372,11 @@ class ZMQClient(RPCClientMixin):
         self.zmq_socket.setsockopt(zmq.LINGER, 0)
         self.zmq_socket.connect(self.addr)
         self.zmq_main_task = asyncio.ensure_future(self.run(), loop=self.loop)
+
+    def ensure_running(self):
+        if self.zmq_main_task.done():
+            self.zmq_main_task = asyncio.ensure_future(self.run(),
+                                                       loop=self.loop)
 
     def __del__(self):
         self.zmq_socket.close()
@@ -413,8 +398,25 @@ class ZMQClient(RPCClientMixin):
             data, = await self.zmq_socket.recv_multipart()
             self.handle(self.addr, data)
 
-    def performMethod(self, methodNane, args, kw):
-        return self.remoteCall(self.addr, methodNane, args, kw)
+
+class ZMQRPCCallable:
+    def __init__(self, methodNane, owner):
+        self.methodNane = methodNane
+        self.owner = owner
+
+    def __call__(self, *args, **kw):
+        self.owner._zmq_client.ensure_running()
+        return self.owner._zmq_client.remoteCall(self.owner._zmq_client.addr,
+                                                 self.methodNane, args, kw)
+
+    def __getattr__(self, name):
+        return ZMQRPCCallable(f"{self.methodNane}.{name}", self.owner)
+
+
+class ZMQClient():
+    def __init__(self, addr, timeout=10, loop=None):
+        self._zmq_client = _ZMQClient(addr, timeout=timeout, loop=loop)
+        self.ping = self._zmq_client.ping
 
     def __getattr__(self, name):
         return ZMQRPCCallable(name, self)
