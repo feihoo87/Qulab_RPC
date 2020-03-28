@@ -27,23 +27,29 @@ def _parse_traceback(err):
     return ret
 
 
-def _format_traceback(err):
-    lines = deque(maxlen=15)
+def _format_frame(frame):
     post_lines = -1
+    lines = deque(maxlen=16)
+    lines.append(f"{frame['filename']} in {frame['name']}")
+    for n, line in enumerate(frame['source'].split('\n')):
+        lno = n + frame['firstlineno']
+        if lno == frame['lineno']:
+            lines.append(f"->{lno:3d} {line}")
+            post_lines = 0
+        else:
+            lines.append(f"  {lno:3d} {line}")
+            if post_lines >= 0:
+                post_lines += 1
+        if post_lines >= 7:
+            break
+    return '\n'.join(lines)
+
+
+def _format_traceback(err):
+    frame_text = []
     for frame in _parse_traceback(err):
-        lines.append(f"{frame['filename']} in {frame['name']}")
-        for n, line in enumerate(frame['source'].split('\n')):
-            lno = n + frame['firstlineno']
-            if lno == frame['lineno']:
-                lines.append(f"->{lno:3d} {line}")
-                post_lines = 0
-            else:
-                lines.append(f"  {lno:3d} {line}")
-                if post_lines >= 0:
-                    post_lines += 1
-            if post_lines >= 7:
-                break
-    traceback_text = '\n'.join(lines)
+        frame_text.append(_format_frame(frame))
+    traceback_text = '\n'.join(frame_text)
     args = list(err.args)
     args.append(traceback_text)
     err.args = tuple(args)
