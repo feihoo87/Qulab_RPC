@@ -371,10 +371,11 @@ class _ZMQClient(RPCClientMixin):
         self.zmq_socket = self._ctx.socket(zmq.DEALER, io_loop=self._loop)
         self.zmq_socket.setsockopt(zmq.LINGER, 0)
         self.zmq_socket.connect(self.addr)
-        self.zmq_main_task = asyncio.ensure_future(self.run(), loop=self.loop)
+        self.zmq_main_task = None
+        self.ensure_running()
 
     def ensure_running(self):
-        if self.zmq_main_task.done():
+        if self.zmq_main_task is None or self.zmq_main_task.done():
             self.zmq_main_task = asyncio.ensure_future(self.run(),
                                                        loop=self.loop)
 
@@ -389,6 +390,9 @@ class _ZMQClient(RPCClientMixin):
 
     async def ping(self, timeout=1):
         return await super().ping(self.addr, timeout=timeout)
+
+    async def shutdownServer(self):
+        return await super().shutdown(self.addr)
 
     async def sendto(self, data, addr):
         await self.zmq_socket.send_multipart([data])
@@ -406,8 +410,10 @@ class ZMQRPCCallable:
 
     def __call__(self, *args, **kw):
         self.owner._zmq_client.ensure_running()
-        return self.owner._zmq_client.remoteCall(self.owner._zmq_client.addr,
-                                                 self.methodNane, args, kw)
+        fut = self.owner._zmq_client.remoteCall(self.owner._zmq_client.addr,
+                                                self.methodNane, args, kw)
+        fut.add_done_callback(self.owner._remoteCallDoneCallbackHook)
+        return fut
 
     def __getattr__(self, name):
         return ZMQRPCCallable(f"{self.methodNane}.{name}", self.owner)
@@ -417,6 +423,11 @@ class ZMQClient():
     def __init__(self, addr, timeout=10, loop=None):
         self._zmq_client = _ZMQClient(addr, timeout=timeout, loop=loop)
         self.ping = self._zmq_client.ping
+        self.shutdownServer = self._zmq_client.shutdownServer
 
     def __getattr__(self, name):
         return ZMQRPCCallable(name, self)
+
+    def _remoteCallDoneCallbackHook(self, fut):
+        """overwrite this method"""
+        pass
