@@ -6,13 +6,12 @@ def _parse_frame(frame):
     ret = {}
     ret['source'] = inspect.getsource(frame)
     ret['name'] = frame.f_code.co_name
+    ret['firstlineno'] = 1
     if ret['name'] != '<module>':
         argnames = frame.f_code.co_varnames[:frame.f_code.co_argcount +
                                             frame.f_code.co_kwonlyargcount]
         ret['name'] += '(' + ', '.join(argnames) + ')'
         ret['firstlineno'] = frame.f_code.co_firstlineno
-    else:
-        ret['firstlineno'] = 1
     ret['filename'] = frame.f_code.co_filename
     return ret
 
