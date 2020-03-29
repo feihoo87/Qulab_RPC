@@ -2,6 +2,7 @@ import asyncio
 import functools
 import inspect
 import logging
+import weakref
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable
 from concurrent.futures import ThreadPoolExecutor
@@ -49,11 +50,13 @@ class RPCMixin(ABC):
 
     def close(self):
         self.stop()
-        for task in self.tasks.values():
-            try:
-                task.cancel()
-            except:
-                pass
+        for task in list(self.tasks.values()):
+            task.cancel()
+        self.tasks.clear()
+        for fut, timeout in list(self.pending.values()):
+            fut.cancel()
+            timeout.cancel()
+        self.pending.clear()
 
     def createTask(self, msgID, coro, timeout=0):
         """
@@ -301,15 +304,6 @@ class ZMQServer(RPCServerMixin):
         self._port = 0 if port is None else port
         self._loop = loop or asyncio.get_event_loop()
         self._module = None
-        self._executor = None
-
-    @property
-    def executor(self):
-        #if self._executor is None:
-        #    self._executor = ThreadPoolExecutor(
-        #        initializer=lambda loop: asyncio.set_event_loop(loop),
-        #        initargs=(self.loop, ))
-        return self._executor
 
     def set_module(self, mod):
         self._module = mod
@@ -341,8 +335,6 @@ class ZMQServer(RPCServerMixin):
         self.zmq_main_task = asyncio.ensure_future(self.run(), loop=self.loop)
 
     def stop(self):
-        if self._executor is not None:
-            self._executor.shutdown()
         if self.zmq_main_task is not None and not self.zmq_main_task.done():
             self.zmq_main_task.cancel()
         super().stop()
@@ -372,8 +364,8 @@ class _ZMQClient(RPCClientMixin):
         self.zmq_socket.setsockopt(zmq.LINGER, 0)
         self.zmq_socket.connect(self.addr)
         self.zmq_main_task = None
-        self.zmq_main_task = asyncio.ensure_future(asyncio.shield(self.run()),
-                                                   loop=self.loop)
+        asyncio.ensure_future(asyncio.shield(self.run(weakref.proxy(self))),
+                              loop=self.loop)
 
     def __del__(self):
         self.zmq_socket.close()
@@ -393,10 +385,18 @@ class _ZMQClient(RPCClientMixin):
     async def sendto(self, data, addr):
         await self.zmq_socket.send_multipart([data])
 
-    async def run(self):
-        while True:
-            data, = await self.zmq_socket.recv_multipart()
-            self.handle(self.addr, data)
+    @staticmethod
+    async def run(client):
+        async def main():
+            while True:
+                data, = await client.zmq_socket.recv_multipart()
+                client.handle(client.addr, data)
+
+        client.zmq_main_task = asyncio.ensure_future(main(), loop=client.loop)
+        try:
+            await client.zmq_main_task
+        except asyncio.CancelledError:
+            pass
 
 
 class ZMQRPCCallable:
