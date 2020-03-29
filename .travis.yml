@@ -39,7 +39,7 @@ install:
 - pip3 install Sphinx sphinxcontrib-napoleon sphinxcontrib-zopeext
 - pip3 install -e .
 script:
-- pytest --cov=qulab --verbose
+- pytest --cov=qurpc --verbose
 after_success:
 - coveralls
 deploy:
