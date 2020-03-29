@@ -372,12 +372,8 @@ class _ZMQClient(RPCClientMixin):
         self.zmq_socket.setsockopt(zmq.LINGER, 0)
         self.zmq_socket.connect(self.addr)
         self.zmq_main_task = None
-        self.ensure_running()
-
-    def ensure_running(self):
-        if self.zmq_main_task is None or self.zmq_main_task.done():
-            self.zmq_main_task = asyncio.ensure_future(self.run(),
-                                                       loop=self.loop)
+        self.zmq_main_task = asyncio.ensure_future(asyncio.shield(self.run()),
+                                                   loop=self.loop)
 
     def __del__(self):
         self.zmq_socket.close()
@@ -409,7 +405,6 @@ class ZMQRPCCallable:
         self.owner = owner
 
     def __call__(self, *args, **kw):
-        self.owner._zmq_client.ensure_running()
         fut = self.owner._zmq_client.remoteCall(self.owner._zmq_client.addr,
                                                 self.methodNane, args, kw)
         fut.add_done_callback(self.owner._remoteCallDoneCallbackHook)
