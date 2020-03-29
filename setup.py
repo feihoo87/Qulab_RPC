@@ -5,6 +5,9 @@ from setuptools import find_packages, setup
 
 here = path.abspath(path.dirname(__file__))
 
+# This reads the __version__ variable from qurpc/_version.py
+exec(open('qurpc/_version.py').read())
+
 # Get the long description from the README file
 with open(path.join(here, 'README.md'), encoding='utf-8') as f:
     long_description = f.read()
@@ -18,7 +21,7 @@ requirements = [
 
 setup(
     name="QuLab_RPC",
-    version='1.3.3',
+    version=__version__,
     author="feihoo87",
     author_email="feihoo87@gmail.com",
     url="https://github.com/feihoo87/QuLab_RPC",
