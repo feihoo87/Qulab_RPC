@@ -26,6 +26,9 @@ class MySrv:
         await asyncio.sleep(0.2)
         return a + b
 
+    def add_fut(self, a, b):
+        return self.add_async(a, b)
+
     def error(self):
         raise Error('error')
 
@@ -85,6 +88,7 @@ async def test_zmqclient(server, event_loop):
                   loop=event_loop)
     assert 8 == await c.add(3, 5)
     assert 9 == await c.add_async(4, 5)
+    assert 13 == await c.add_fut(6, 7)
     assert "hello, world" == await c.sub.hello()
     with pytest.raises(QuLabRPCTimeout):
         await c.sleep(1)

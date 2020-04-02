@@ -287,6 +287,8 @@ class RPCServerMixin(RPCMixin):
             else:
                 result = await self.loop.run_in_executor(
                     self.executor, functools.partial(func, *args, **kw))
+                if isinstance(result, Awaitable):
+                    result = await result
         except QuLabRPCError as e:
             result = e
         except Exception as e:
