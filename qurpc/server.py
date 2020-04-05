@@ -1,76 +1,13 @@
 import asyncio
-import functools
-import inspect
 import logging
-from abc import abstractmethod
-from collections.abc import Awaitable
 from concurrent.futures import ThreadPoolExecutor
 
 import zmq
 import zmq.asyncio
 
-from .exceptions import QuLabRPCError, QuLabRPCServerError, QuLabRPCTimeout
-from .rpc import RPCMixin
-from .serialize import pack, unpack
-from .utils import acceptArg, randomID
+from .rpc import RPCServerMixin
 
 log = logging.getLogger(__name__)  # pylint: disable=invalid-name
-
-
-class RPCServerMixin(RPCMixin):
-    def _unpack_request(self, msg):
-        try:
-            method, args, kw = unpack(msg)
-        except:
-            raise QuLabRPCError("Could not read packet: %r" % msg)
-        return method, args, kw
-
-    @property
-    def executor(self):
-        return None
-
-    @abstractmethod
-    def getRequestHandler(self, methodNane, source, msgID):
-        """
-        Get suitable handler for request.
-
-        You should implement this method yourself.
-        """
-
-    def on_request(self, source, msgID, msg):
-        """
-        Received a request from source.
-        """
-        method, args, kw = self._unpack_request(msg)
-        self.createTask(msgID,
-                        self.handle_request(source, msgID, method, args, kw),
-                        timeout=kw.get('timeout', 0))
-
-    async def handle_request(self, source, msgID, method, args, kw):
-        """
-        Handle a request from source.
-        """
-        try:
-            func = self.getRequestHandler(method, source=source, msgID=msgID)
-            result = await self.callMethod(func, *args, **kw)
-        except QuLabRPCError as e:
-            result = e
-        except Exception as e:
-            result = QuLabRPCServerError.make(e)
-        msg = pack(result)
-        await self.response(source, msgID, msg)
-
-    async def callMethod(self, func, *args, **kw):
-        if 'timeout' in kw and not acceptArg(func, 'timeout'):
-            del kw['timeout']
-        if inspect.iscoroutinefunction(func):
-            result = await func(*args, **kw)
-        else:
-            result = await self.loop.run_in_executor(
-                self.executor, functools.partial(func, *args, **kw))
-            if isinstance(result, Awaitable):
-                result = await result
-        return result
 
 
 class ZMQServer(RPCServerMixin):

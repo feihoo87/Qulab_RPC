@@ -5,46 +5,9 @@ import weakref
 import zmq
 import zmq.asyncio
 
-from .exceptions import QuLabRPCError, QuLabRPCServerError, QuLabRPCTimeout
-from .rpc import RPCMixin
-from .serialize import pack, unpack
-from .utils import randomID
+from .rpc import RPCClientMixin
+
 log = logging.getLogger(__name__)  # pylint: disable=invalid-name
-
-
-class RPCClientMixin(RPCMixin):
-    _client_defualt_timeout = 10
-
-    def set_timeout(self, timeout=10):
-        self._client_defualt_timeout = timeout
-
-    def remoteCall(self, addr, methodNane, args=(), kw={}):
-        if 'timeout' in kw:
-            timeout = kw['timeout']
-        else:
-            timeout = self._client_defualt_timeout
-        msg = pack((methodNane, args, kw))
-        msgID = randomID()
-        asyncio.ensure_future(self.request(addr, msgID, msg), loop=self.loop)
-        return self.createPending(addr, msgID, timeout)
-
-    async def shutdown(self, address, roleAuth):
-        await self.sendto(RPC_SHUTDOWN + randomID() + roleAuth, address)
-
-    def on_response(self, source, msgID, msg):
-        """
-        Client side.
-        """
-        if msgID not in self.pending:
-            return
-        fut, timeout = self.pending[msgID]
-        timeout.cancel()
-        result = unpack(msg)
-        if not fut.done():
-            if isinstance(result, Exception):
-                fut.set_exception(result)
-            else:
-                fut.set_result(result)
 
 
 class _ZMQClient(RPCClientMixin):
