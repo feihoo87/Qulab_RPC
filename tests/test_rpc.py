@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 
 import pytest
 
@@ -37,6 +38,31 @@ class MySrv:
 
     async def sleep(self, t):
         await asyncio.sleep(t)
+
+    def gen(self):
+        get = None
+        for i in range(10):
+            get = yield i if get is not None else get
+
+    async def async_gen(self):
+        get = None
+        for i in range(10):
+            await asyncio.sleep(0.01)
+            get = yield i if get is not None else get
+
+    @contextlib.contextmanager
+    def context(self, x):
+        try:
+            yield x
+        finally:
+            pass
+
+    @contextlib.asynccontextmanager
+    async def async_context(self, x):
+        try:
+            yield x
+        finally:
+            pass
 
 
 @pytest.fixture()
@@ -119,12 +145,4 @@ async def test_zmqserver_port(server2, event_loop):
     c = ZMQClient('tcp://127.0.0.1:%d' % server2.port,
                   timeout=2,
                   loop=event_loop)
-    fut = asyncio.ensure_future(c.sleep(100), loop=event_loop)
-    await asyncio.sleep(0.1)
-    n = len(server2.tasks.keys())
-    assert n != 0
-    try:
-        await fut
-    except:
-        await asyncio.sleep(0.1)
-    assert n > len(server2.tasks.keys())
+    assert await c.ping()
