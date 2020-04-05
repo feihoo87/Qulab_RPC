@@ -26,21 +26,6 @@ RPC_SHUTDOWN = b'\x06'
 
 
 class RPCMixin(ABC):
-    __pending = None
-    __tasks = None
-
-    @property
-    def pending(self):
-        if self.__pending is None:
-            self.__pending = {}
-        return self.__pending
-
-    @property
-    def tasks(self):
-        if self.__tasks is None:
-            self.__tasks = {}
-        return self.__tasks
-
     def start(self):
         pass
 
@@ -48,72 +33,7 @@ class RPCMixin(ABC):
         pass
 
     def close(self):
-        self.stop()
-        for task in list(self.tasks.values()):
-            task.cancel()
-        self.tasks.clear()
-        for fut, timeout in list(self.pending.values()):
-            fut.cancel()
-            timeout.cancel()
-        self.pending.clear()
-
-    def createTask(self, msgID, coro, timeout=0):
-        """
-        Create a new task for msgID.
-        """
-        if timeout > 0:
-            coro = asyncio.wait_for(coro, timeout)
-        task = asyncio.ensure_future(coro, loop=self.loop)
-        self.tasks[msgID] = task
-
-        def clean(fut, msgID=msgID):
-            if msgID in self.tasks:
-                del self.tasks[msgID]
-
-        task.add_done_callback(clean)
-
-    def cancelTask(self, msgID):
-        """
-        Cancel the task for msgID.
-        """
-        if msgID in self.tasks:
-            self.tasks[msgID].cancel()
-
-    def createPending(self, addr, msgID, timeout=1, cancelRemote=True):
-        """
-        Create a future for request, wait response before timeout.
-        """
-        fut = self.loop.create_future()
-        self.pending[msgID] = (fut,
-                               self.loop.call_later(timeout,
-                                                    self.cancelPending, addr,
-                                                    msgID, cancelRemote))
-
-        def clean(fut, msgID=msgID):
-            if msgID in self.pending:
-                del self.pending[msgID]
-
-        fut.add_done_callback(clean)
-
-        return fut
-
-    def cancelPending(self, addr, msgID, cancelRemote):
-        """
-        Give up when request timeout and try to cancel remote task.
-        """
-        if msgID in self.pending:
-            fut, timeout = self.pending[msgID]
-            if cancelRemote:
-                self.cancelRemoteTask(addr, msgID)
-            if not fut.done():
-                fut.set_exception(QuLabRPCTimeout('Time out.'))
-
-    def cancelRemoteTask(self, addr, msgID):
-        """
-        Try to cancel remote task.
-        """
-        asyncio.ensure_future(self.sendto(RPC_CANCEL + msgID, addr),
-                              loop=self.loop)
+        pass
 
     @property
     @abstractmethod
@@ -162,69 +82,59 @@ class RPCMixin(ABC):
         if handler is not None:
             getattr(self, handler)(source, *args)
 
-    async def ping(self, addr, timeout=1):
-        await self.sendto(RPC_PING, addr)
-        fut = self.createPending(addr, addr, timeout, False)
-        try:
-            return await fut
-        except QuLabRPCTimeout:
-            return False
-
-    async def pong(self, addr):
-        await self.sendto(RPC_PONG, addr)
-
-    async def request(self, address, msgID, msg):
-        log.debug(f'send request {address}, {msgID.hex()}, {msg}')
-        await self.sendto(RPC_REQUEST + msgID + msg, address)
-
-    async def response(self, address, msgID, msg):
-        log.debug(f'send response {address}, {msgID.hex()}, {msg}')
-        await self.sendto(RPC_RESPONSE + msgID + msg, address)
-
-    async def shutdown(self, address, msgID, roleAuth):
-        await self.sendto(RPC_SHUTDOWN + msgID + roleAuth, address)
-
-    def on_request(self, source, msgID, msg):
-        """
-        Handle request.
-
-        Overwrite this method on server.
-        """
-        raise NotImplementedError("'on_request' not defined.")
-
-    def on_response(self, source, msgID, msg):
-        """
-        Handle response.
-
-        Overwrite this method on client.
-        """
-        raise NotImplementedError("'on_response' not defined.")
-
-    def on_ping(self, source, msg):
-        log.debug(f"received ping from {source}")
-        asyncio.ensure_future(self.pong(source), loop=self.loop)
-
-    def on_pong(self, source, msg):
-        log.debug(f"received pong from {source}")
-        if source in self.pending:
-            fut, timeout = self.pending[source]
-            timeout.cancel()
-            if not fut.done():
-                fut.set_result(True)
-
-    def on_cancel(self, source, msgID, msg):
-        self.cancelTask(msgID)
-
-    def on_shutdown(self, source, msgID, roleAuth):
-        if self.is_admin(source, roleAuth):
-            raise SystemExit(0)
-
-    def is_admin(self, source, roleAuth):
-        return True
-
 
 class RPCClientMixin(RPCMixin):
     _client_defualt_timeout = 10
+    __pending = None
+
+    @property
+    def pending(self):
+        if self.__pending is None:
+            self.__pending = {}
+        return self.__pending
+
+    def createPending(self, addr, msgID, timeout=1, cancelRemote=True):
+        """
+        Create a future for request, wait response before timeout.
+        """
+        fut = self.loop.create_future()
+        self.pending[msgID] = (fut,
+                               self.loop.call_later(timeout,
+                                                    self.cancelPending, addr,
+                                                    msgID, cancelRemote))
+
+        def clean(fut, msgID=msgID):
+            if msgID in self.pending:
+                del self.pending[msgID]
+
+        fut.add_done_callback(clean)
+
+        return fut
+
+    def cancelPending(self, addr, msgID, cancelRemote):
+        """
+        Give up when request timeout and try to cancel remote task.
+        """
+        if msgID in self.pending:
+            fut, timeout = self.pending[msgID]
+            if cancelRemote:
+                self.cancelRemoteTask(addr, msgID)
+            if not fut.done():
+                fut.set_exception(QuLabRPCTimeout('Time out.'))
+
+    def cancelRemoteTask(self, addr, msgID):
+        """
+        Try to cancel remote task.
+        """
+        asyncio.ensure_future(self.sendto(RPC_CANCEL + msgID, addr),
+                              loop=self.loop)
+
+    def close(self):
+        self.stop()
+        for fut, timeout in list(self.pending.values()):
+            fut.cancel()
+            timeout.cancel()
+        self.pending.clear()
 
     def set_timeout(self, timeout=10):
         self._client_defualt_timeout = timeout
@@ -239,8 +149,28 @@ class RPCClientMixin(RPCMixin):
         asyncio.ensure_future(self.request(addr, msgID, msg), loop=self.loop)
         return self.createPending(addr, msgID, timeout)
 
+    async def ping(self, addr, timeout=1):
+        await self.sendto(RPC_PING, addr)
+        fut = self.createPending(addr, addr, timeout, False)
+        try:
+            return await fut
+        except QuLabRPCTimeout:
+            return False
+
+    async def request(self, address, msgID, msg):
+        log.debug(f'send request {address}, {msgID.hex()}, {msg}')
+        await self.sendto(RPC_REQUEST + msgID + msg, address)
+
     async def shutdown(self, address, roleAuth):
         await self.sendto(RPC_SHUTDOWN + randomID() + roleAuth, address)
+
+    def on_pong(self, source, msg):
+        log.debug(f"received pong from {source}")
+        if source in self.pending:
+            fut, timeout = self.pending[source]
+            timeout.cancel()
+            if not fut.done():
+                fut.set_result(True)
 
     def on_response(self, source, msgID, msg):
         """
@@ -259,6 +189,42 @@ class RPCClientMixin(RPCMixin):
 
 
 class RPCServerMixin(RPCMixin):
+    __tasks = None
+
+    @property
+    def tasks(self):
+        if self.__tasks is None:
+            self.__tasks = {}
+        return self.__tasks
+
+    def createTask(self, msgID, coro, timeout=0):
+        """
+        Create a new task for msgID.
+        """
+        if timeout > 0:
+            coro = asyncio.wait_for(coro, timeout)
+        task = asyncio.ensure_future(coro, loop=self.loop)
+        self.tasks[msgID] = task
+
+        def clean(fut, msgID=msgID):
+            if msgID in self.tasks:
+                del self.tasks[msgID]
+
+        task.add_done_callback(clean)
+
+    def cancelTask(self, msgID):
+        """
+        Cancel the task for msgID.
+        """
+        if msgID in self.tasks:
+            self.tasks[msgID].cancel()
+
+    def close(self):
+        self.stop()
+        for task in list(self.tasks.values()):
+            task.cancel()
+        self.tasks.clear()
+
     def _unpack_request(self, msg):
         try:
             method, args, kw = unpack(msg)
@@ -277,15 +243,6 @@ class RPCServerMixin(RPCMixin):
 
         You should implement this method yourself.
         """
-
-    def on_request(self, source, msgID, msg):
-        """
-        Received a request from source.
-        """
-        method, args, kw = self._unpack_request(msg)
-        self.createTask(msgID,
-                        self.handle_request(source, msgID, method, args, kw),
-                        timeout=kw.get('timeout', 0))
 
     async def handle_request(self, source, msgID, method, args, kw):
         """
@@ -312,3 +269,33 @@ class RPCServerMixin(RPCMixin):
             if isinstance(result, Awaitable):
                 result = await result
         return result
+
+    async def pong(self, addr):
+        await self.sendto(RPC_PONG, addr)
+
+    async def response(self, address, msgID, msg):
+        log.debug(f'send response {address}, {msgID.hex()}, {msg}')
+        await self.sendto(RPC_RESPONSE + msgID + msg, address)
+
+    def on_ping(self, source, msg):
+        log.debug(f"received ping from {source}")
+        asyncio.ensure_future(self.pong(source), loop=self.loop)
+
+    def on_request(self, source, msgID, msg):
+        """
+        Received a request from source.
+        """
+        method, args, kw = self._unpack_request(msg)
+        self.createTask(msgID,
+                        self.handle_request(source, msgID, method, args, kw),
+                        timeout=kw.get('timeout', 0))
+
+    def on_shutdown(self, source, msgID, roleAuth):
+        if self.is_admin(source, roleAuth):
+            raise SystemExit(0)
+
+    def is_admin(self, source, roleAuth):
+        return True
+
+    def on_cancel(self, source, msgID, msg):
+        self.cancelTask(msgID)
