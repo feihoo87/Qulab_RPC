@@ -28,11 +28,13 @@ class RPCClientMixin(RPCMixin):
         asyncio.ensure_future(self.request(addr, msgID, msg), loop=self.loop)
         return self.createPending(addr, msgID, timeout)
 
-    def on_response(self, source, data):
+    async def shutdown(self, address, roleAuth):
+        await self.sendto(RPC_SHUTDOWN + randomID() + roleAuth, address)
+
+    def on_response(self, source, msgID, msg):
         """
         Client side.
         """
-        msgID, msg = data[:20], data[20:]
         if msgID not in self.pending:
             return
         fut, timeout = self.pending[msgID]
@@ -50,6 +52,7 @@ class _ZMQClient(RPCClientMixin):
         self._loop = loop or asyncio.get_event_loop()
         self.set_timeout(timeout)
         self.addr = addr
+        self.roleAuth = b''
         self._ctx = zmq.asyncio.Context()
         self.zmq_socket = self._ctx.socket(zmq.DEALER, io_loop=self._loop)
         self.zmq_socket.setsockopt(zmq.LINGER, 0)
@@ -71,7 +74,7 @@ class _ZMQClient(RPCClientMixin):
         return await super().ping(self.addr, timeout=timeout)
 
     async def shutdownServer(self):
-        return await super().shutdown(self.addr)
+        return await super().shutdown(self.addr, self.roleAuth)
 
     async def sendto(self, data, addr):
         await self.zmq_socket.send_multipart([data])

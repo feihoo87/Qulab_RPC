@@ -2,7 +2,7 @@ import asyncio
 import logging
 from abc import ABC, abstractmethod
 
-from .exceptions import QuLabRPCTimeout
+from .exceptions import QuLabRPCTimeout, QuLabRPCError
 
 log = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -14,6 +14,10 @@ RPC_PING = b'\x03'
 RPC_PONG = b'\x04'
 RPC_CANCEL = b'\x05'
 RPC_SHUTDOWN = b'\x06'
+# RPC_LONGREQUEST = b'\x07'
+# RPC_LONGRESPONSE = b'\x08'
+# RPC_LEVELUPRESPONSE = b'\x09'
+# RPC_STARTLONGREQUEST = b'\x0a'
 
 
 class RPCMixin(ABC):
@@ -128,17 +132,30 @@ class RPCMixin(ABC):
         RPC_SHUTDOWN: 'on_shutdown',
     }
 
+    def parseData(self, data):
+        msg_type, msg = data[:1], data[1:]
+        if msg_type in [RPC_PING, RPC_PONG]:
+            return msg_type, msg
+        elif msg_type in [RPC_REQUEST, RPC_RESPONSE, RPC_CANCEL, RPC_SHUTDOWN]:
+            msgID, msg = msg[:20], msg[20:]
+            return msg_type, msgID, msg
+        # elif msg_type in [RPC_LONGREQUEST, RPC_LONGRESPONSE]:
+        #     msgID, sessionID, msg = msg[:20], msg[20:40], msg[40:]
+        #     return msg_type, msgID, sessionID, msg
+        else:
+            raise QuLabRPCError(f'Unkown message type {msg_type}.')
+
     def handle(self, source, data):
         """
         Handle received data.
 
         Should be called whenever received data from outside.
         """
-        msg_type, data = data[:1], data[1:]
+        msg_type, *args = self.parseData(data)
         log.debug(f'received request {msg_type} from {source}')
         handler = self.__rpc_handlers.get(msg_type, None)
         if handler is not None:
-            getattr(self, handler)(source, data)
+            getattr(self, handler)(source, *args)
 
     async def ping(self, addr, timeout=1):
         await self.sendto(RPC_PING, addr)
@@ -159,10 +176,10 @@ class RPCMixin(ABC):
         log.debug(f'send response {address}, {msgID.hex()}, {msg}')
         await self.sendto(RPC_RESPONSE + msgID + msg, address)
 
-    async def shutdown(self, address):
-        await self.sendto(RPC_SHUTDOWN, address)
+    async def shutdown(self, address, msgID, roleAuth):
+        await self.sendto(RPC_SHUTDOWN + msgID + roleAuth, address)
 
-    def on_request(self, source, data):
+    def on_request(self, source, msgID, msg):
         """
         Handle request.
 
@@ -170,7 +187,7 @@ class RPCMixin(ABC):
         """
         raise NotImplementedError("'on_request' not defined.")
 
-    def on_response(self, source, data):
+    def on_response(self, source, msgID, msg):
         """
         Handle response.
 
@@ -178,11 +195,11 @@ class RPCMixin(ABC):
         """
         raise NotImplementedError("'on_response' not defined.")
 
-    def on_ping(self, source, data):
+    def on_ping(self, source, msg):
         log.debug(f"received ping from {source}")
         asyncio.ensure_future(self.pong(source), loop=self.loop)
 
-    def on_pong(self, source, data):
+    def on_pong(self, source, msg):
         log.debug(f"received pong from {source}")
         if source in self.pending:
             fut, timeout = self.pending[source]
@@ -190,13 +207,12 @@ class RPCMixin(ABC):
             if not fut.done():
                 fut.set_result(True)
 
-    def on_cancel(self, source, data):
-        msgID = data[:20]
+    def on_cancel(self, source, msgID, msg):
         self.cancelTask(msgID)
 
-    def on_shutdown(self, source, data):
-        if self.is_admin(source, data):
+    def on_shutdown(self, source, msgID, roleAuth):
+        if self.is_admin(source, roleAuth):
             raise SystemExit(0)
 
-    def is_admin(self, source, data):
+    def is_admin(self, source, roleAuth):
         return True

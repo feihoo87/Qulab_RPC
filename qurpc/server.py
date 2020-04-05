@@ -37,38 +37,40 @@ class RPCServerMixin(RPCMixin):
         You should implement this method yourself.
         """
 
-    def on_request(self, source, data):
+    def on_request(self, source, msgID, msg):
         """
         Received a request from source.
         """
-        msgID, msg = data[:20], data[20:]
         method, args, kw = self._unpack_request(msg)
         self.createTask(msgID,
-                        self.handle_request(source, msgID, method, *args,
-                                            **kw),
+                        self.handle_request(source, msgID, method, args, kw),
                         timeout=kw.get('timeout', 0))
 
-    async def handle_request(self, source, msgID, method, *args, **kw):
+    async def handle_request(self, source, msgID, method, args, kw):
         """
         Handle a request from source.
         """
         try:
             func = self.getRequestHandler(method, source=source, msgID=msgID)
-            if 'timeout' in kw and not acceptArg(func, 'timeout'):
-                del kw['timeout']
-            if inspect.iscoroutinefunction(func):
-                result = await func(*args, **kw)
-            else:
-                result = await self.loop.run_in_executor(
-                    self.executor, functools.partial(func, *args, **kw))
-                if isinstance(result, Awaitable):
-                    result = await result
+            result = await self.callMethod(func, *args, **kw)
         except QuLabRPCError as e:
             result = e
         except Exception as e:
             result = QuLabRPCServerError.make(e)
         msg = pack(result)
         await self.response(source, msgID, msg)
+
+    async def callMethod(self, func, *args, **kw):
+        if 'timeout' in kw and not acceptArg(func, 'timeout'):
+            del kw['timeout']
+        if inspect.iscoroutinefunction(func):
+            result = await func(*args, **kw)
+        else:
+            result = await self.loop.run_in_executor(
+                self.executor, functools.partial(func, *args, **kw))
+            if isinstance(result, Awaitable):
+                result = await result
+        return result
 
 
 class ZMQServer(RPCServerMixin):
