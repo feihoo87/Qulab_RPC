@@ -13,7 +13,7 @@ log = logging.getLogger(__name__)  # pylint: disable=invalid-name
 class _ZMQClient(RPCClientMixin):
     def __init__(self, addr, timeout=10, loop=None):
         self._loop = loop or asyncio.get_event_loop()
-        self.set_timeout(timeout)
+        self.setTimeout(timeout)
         self.addr = addr
         self.roleAuth = b''
         self._ctx = zmq.asyncio.Context()

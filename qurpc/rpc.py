@@ -136,7 +136,7 @@ class RPCClientMixin(RPCMixin):
             timeout.cancel()
         self.pending.clear()
 
-    def set_timeout(self, timeout=10):
+    def setTimeout(self, timeout=10):
         self._client_defualt_timeout = timeout
 
     def remoteCall(self, addr, methodNane, args=(), kw={}):
