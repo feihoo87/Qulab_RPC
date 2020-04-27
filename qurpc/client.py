@@ -56,30 +56,37 @@ class _ZMQClient(RPCClientMixin):
             pass
 
 
+class FakeLock():
+    async def __aenter__(self):
+        pass
+
+    async def __aexit__(self, exc_type, exc_value, traceback):
+        pass
+
+
 class ZMQRPCCallable:
     def __init__(self, methodNane, owner):
         self.methodNane = methodNane
         self.owner = owner
 
+    async def call(self, *args, **kw):
+        async with self.owner.lock:
+            return await self.owner._zmq_client.remoteCall(
+                self.owner._zmq_client.addr, self.methodNane, args, kw)
+
     def __call__(self, *args, **kw):
-        fut = self.owner._zmq_client.remoteCall(self.owner._zmq_client.addr,
-                                                self.methodNane, args, kw)
-        fut.add_done_callback(self.owner._remoteCallDoneCallbackHook)
-        return fut
+        return self.call(*args, **kw)
 
     def __getattr__(self, name):
         return ZMQRPCCallable(f"{self.methodNane}.{name}", self.owner)
 
 
 class ZMQClient():
-    def __init__(self, addr, timeout=10, loop=None):
+    def __init__(self, addr, timeout=10, loop=None, lock=None):
         self._zmq_client = _ZMQClient(addr, timeout=timeout, loop=loop)
         self.ping = self._zmq_client.ping
+        self.lock = FakeLock() if lock is None else lock
         self.shutdownServer = self._zmq_client.shutdownServer
 
     def __getattr__(self, name):
         return ZMQRPCCallable(name, self)
-
-    def _remoteCallDoneCallbackHook(self, fut):
-        """overwrite this method"""
-        pass
