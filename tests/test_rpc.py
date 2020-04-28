@@ -57,12 +57,12 @@ class MySrv:
         finally:
             pass
 
-    @contextlib.asynccontextmanager
-    async def async_context(self, x):
-        try:
-            yield x
-        finally:
-            pass
+    # @contextlib.asynccontextmanager
+    # async def async_context(self, x):
+    #     try:
+    #         yield x
+    #     finally:
+    #         pass
 
 
 @pytest.fixture()
