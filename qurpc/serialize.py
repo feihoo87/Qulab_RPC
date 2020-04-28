@@ -34,7 +34,7 @@ def register(cls: type,
     __unpack_handlers[t] = decode
 
 
-def default(obj):
+def default(obj: Any) -> msgpack.ExtType:
     for cls, (t, encode) in __pack_handlers.items():
         if isinstance(obj, cls):
             return msgpack.ExtType(t, encode(obj))
@@ -42,7 +42,7 @@ def default(obj):
         raise TypeError("Unknown type: %r" % (obj, ))
 
 
-def ext_hook(code, data):
+def ext_hook(code: int, data: bytes) -> msgpack.ExtType:
     for c, decode in __unpack_handlers.items():
         if code == c:
             return decode(data)
@@ -97,13 +97,13 @@ try:
     _dtype_map1 = {t: i for i, t in enumerate(dtypes)}
     _dtype_map2 = {i: t for i, t in enumerate(dtypes)}
 
-    def encode_ndarray(x):
+    def encode_ndarray(x: np.ndarray) -> bytes:
         dtype = x.dtype
         if isinstance(dtype, np.dtype):
             dtype = dtype.type
         return packz((_dtype_map1[dtype], x.shape, x.tobytes()))
 
-    def decode_ndarray(buff):
+    def decode_ndarray(buff: bytes) -> np.ndarray:
         t, shape, buff = unpackz(buff)
         x = np.frombuffer(buff)
         x.dtype = _dtype_map2[t]
