@@ -33,8 +33,10 @@ matrix:
     - python -m pip install --user -r requirements.txt
     env: PATH=/c/Python37:/c/Python37/Scripts:/c/Users/travis/AppData/Roaming/Python/Python37/Scripts:$PATH
 install:
+- pip3 install -U pip
+- pip3 install -U pytest
 - pip3 install -r requirements.txt
-- pip3 install pytest pytest-asyncio pytest-cov
+- pip3 install pytest-asyncio pytest-cov
 - pip3 install coveralls
 - pip3 install Sphinx sphinxcontrib-napoleon sphinxcontrib-zopeext
 - pip3 install -e .
