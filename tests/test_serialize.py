@@ -50,6 +50,11 @@ def test_register():
 def test_compress():
     x = '123abc' * 1000
     buff = pack(x)
-    cbuff = packz(x)
-    assert len(buff) > len(cbuff)
-    assert np.all(x == unpackz(cbuff))
+    compress_level(3)
+    cbuff1 = packz(x)
+    compress_level(9)
+    cbuff2 = packz(x)
+    assert len(buff) > len(cbuff1)
+    assert np.all(x == unpackz(cbuff1))
+    assert len(cbuff1) > len(cbuff2)
+    assert np.all(x == unpackz(cbuff2))

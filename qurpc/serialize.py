@@ -1,6 +1,6 @@
-import gzip
 import pickle
 import struct
+import zlib
 from typing import Any, Callable, TypeVar
 
 import msgpack
@@ -8,8 +8,24 @@ import msgpack
 __index = 0
 __pack_handlers = {}
 __unpack_handlers = {}
+__compress_level = zlib.Z_NO_COMPRESSION
 
 cls = TypeVar('cls')
+
+
+def compress_level(level: int) -> None:
+    """
+    Set compress level
+
+    Args:
+        level: int
+            An integer from 0 to 9 controlling the level of compression;
+            1 is fastest and produces the least compression, 9 is slowest
+            and produces the most. 0 is no compression. The default value
+            is 0.
+    """
+    global __compress_level
+    __compress_level = level
 
 
 def register(cls: type,
@@ -68,14 +84,14 @@ def packz(obj: Any) -> bytes:
     """
     Serialize and compress.
     """
-    return gzip.compress(pack(obj))
+    return zlib.compress(pack(obj), level=__compress_level)
 
 
 def unpackz(buff: bytes) -> Any:
     """
     Decompress and unserialize.
     """
-    return unpack(gzip.decompress(buff))
+    return unpack(zlib.decompress(buff))
 
 
 def encode_excepion(e: Exception) -> bytes:
@@ -115,4 +131,4 @@ try:
 except:
     pass
 
-__all__ = ['register', 'pack', 'unpack', 'packz', 'unpackz']
+__all__ = ['compress_level', 'register', 'pack', 'unpack', 'packz', 'unpackz']
