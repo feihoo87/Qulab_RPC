@@ -237,7 +237,7 @@ class RPCServerMixin(RPCMixin):
         return None
 
     @abstractmethod
-    def getRequestHandler(self, methodNane, source, msgID):
+    def getRequestHandler(self, methodNane, source, msgID, args=(), kw={}):
         """
         Get suitable handler for request.
 
