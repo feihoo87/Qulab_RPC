@@ -24,6 +24,8 @@ RPC_SHUTDOWN = b'\x06'
 # RPC_LEVELUPRESPONSE = b'\x09'
 # RPC_STARTLONGREQUEST = b'\x0a'
 
+RPC_MSGIDSIZE = len(randomID())
+
 
 class RPCMixin(ABC):
     def start(self):
@@ -62,7 +64,7 @@ class RPCMixin(ABC):
         if msg_type in [RPC_PING, RPC_PONG]:
             return msg_type, msg
         elif msg_type in [RPC_REQUEST, RPC_RESPONSE, RPC_CANCEL, RPC_SHUTDOWN]:
-            msgID, msg = msg[:20], msg[20:]
+            msgID, msg = msg[:RPC_MSGIDSIZE], msg[RPC_MSGIDSIZE:]
             return msg_type, msgID, msg
         # elif msg_type in [RPC_LONGREQUEST, RPC_LONGRESPONSE]:
         #     msgID, sessionID, msg = msg[:20], msg[20:40], msg[40:]
