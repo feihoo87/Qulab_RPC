@@ -65,20 +65,20 @@ class FakeLock():
 
 
 class ZMQRPCCallable:
-    def __init__(self, methodNane, owner):
-        self.methodNane = methodNane
+    def __init__(self, methodName, owner):
+        self.methodName = methodName
         self.owner = owner
 
     async def call(self, *args, **kw):
         async with self.owner.lock:
             return await self.owner._zmq_client.remoteCall(
-                self.owner._zmq_client.addr, self.methodNane, args, kw)
+                self.owner._zmq_client.addr, self.methodName, args, kw)
 
     def __call__(self, *args, **kw):
         return self.call(*args, **kw)
 
     def __getattr__(self, name):
-        return ZMQRPCCallable(f"{self.methodNane}.{name}", self.owner)
+        return ZMQRPCCallable(f"{self.methodName}.{name}", self.owner)
 
 
 class ZMQClient():
