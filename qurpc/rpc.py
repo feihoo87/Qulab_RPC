@@ -2,14 +2,30 @@ import asyncio
 import functools
 import inspect
 import logging
+import struct
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable
 
 from .exceptions import QuLabRPCError, QuLabRPCServerError, QuLabRPCTimeout
 from .serialize import pack, unpack
-from .utils import acceptArg, randomID
+from .utils import acceptArg
 
 log = logging.getLogger(__name__)  # pylint: disable=invalid-name
+
+msgIDFormat = struct.Struct("!IIQ")
+
+__msgIndex = 1024
+
+
+def nextMsgID(clientID, sessionID=0):
+    global __msgIndex
+    __msgIndex += 1
+    return msgIDFormat.pack(clientID, sessionID, __msgIndex)
+
+
+def parseMsgID(msgID):
+    return msgIDFormat.unpack(msgID)
+
 
 # message type
 
@@ -19,12 +35,10 @@ RPC_PING = b'\x03'
 RPC_PONG = b'\x04'
 RPC_CANCEL = b'\x05'
 RPC_SHUTDOWN = b'\x06'
-# RPC_LONGREQUEST = b'\x07'
-# RPC_LONGRESPONSE = b'\x08'
-# RPC_LEVELUPRESPONSE = b'\x09'
-# RPC_STARTLONGREQUEST = b'\x0a'
+RPC_CONNECT = b'\x07'
+RPC_WELCOME = b'\x08'
 
-RPC_MSGIDSIZE = len(randomID())
+RPC_MSGIDSIZE = msgIDFormat.size
 
 
 class RPCMixin(ABC):
@@ -51,6 +65,8 @@ class RPCMixin(ABC):
         """
 
     __rpc_handlers = {
+        RPC_CONNECT: 'on_connect',
+        RPC_WELCOME: 'on_welcome',
         RPC_PING: 'on_ping',
         RPC_PONG: 'on_pong',
         RPC_REQUEST: 'on_request',
@@ -61,7 +77,7 @@ class RPCMixin(ABC):
 
     def parseData(self, data):
         msg_type, msg = data[:1], data[1:]
-        if msg_type in [RPC_PING, RPC_PONG]:
+        if msg_type in [RPC_PING, RPC_PONG, RPC_CONNECT, RPC_WELCOME]:
             return msg_type, msg
         elif msg_type in [RPC_REQUEST, RPC_RESPONSE, RPC_CANCEL, RPC_SHUTDOWN]:
             msgID, msg = msg[:RPC_MSGIDSIZE], msg[RPC_MSGIDSIZE:]
@@ -84,16 +100,28 @@ class RPCMixin(ABC):
         if handler is not None:
             getattr(self, handler)(source, *args)
 
+    async def pong(self, addr):
+        await self.sendto(RPC_PONG, addr)
+
+    def on_ping(self, source, msg):
+        log.debug(f"received ping from {source}")
+        asyncio.ensure_future(self.pong(source), loop=self.loop)
+
 
 class RPCClientMixin(RPCMixin):
     _client_defualt_timeout = 10
     __pending = None
+    __clientID = 1
 
     @property
     def pending(self):
         if self.__pending is None:
             self.__pending = {}
         return self.__pending
+
+    @property
+    def clientID(self):
+        return self.__clientID
 
     def createPending(self, addr, msgID, timeout=1, cancelRemote=True):
         """
@@ -147,9 +175,20 @@ class RPCClientMixin(RPCMixin):
         else:
             timeout = self._client_defualt_timeout
         msg = pack((methodNane, args, kw))
-        msgID = randomID()
+        msgID = nextMsgID(self.clientID)
         asyncio.ensure_future(self.request(addr, msgID, msg), loop=self.loop)
         return self.createPending(addr, msgID, timeout)
+
+    async def connect(self, addr, authkey=b"", timeout=None):
+        if timeout is None:
+            timeout = self._client_defualt_timeout
+        await self.sendto(RPC_CONNECT+authkey, addr)
+        fut = self.createPending(addr, addr, timeout, False)
+        msgID = await fut
+        clientID, *_ = parseMsgID(msgID)
+        if clientID < 1024:
+            raise QuLabRPCError(f'Connect {addr} fail')
+        self.__clientID = clientID
 
     async def ping(self, addr, timeout=1):
         await self.sendto(RPC_PING, addr)
@@ -164,7 +203,15 @@ class RPCClientMixin(RPCMixin):
         await self.sendto(RPC_REQUEST + msgID + msg, address)
 
     async def shutdown(self, address, roleAuth):
-        await self.sendto(RPC_SHUTDOWN + randomID() + roleAuth, address)
+        await self.sendto(RPC_SHUTDOWN + nextMsgID(self.clientID) + roleAuth,
+                          address)
+
+    def on_welcome(self, source, msg):
+        if source in self.pending:
+            fut, timeout = self.pending[source]
+            timeout.cancel()
+            if not fut.done():
+                fut.set_result(msg)
 
     def on_pong(self, source, msg):
         log.debug(f"received pong from {source}")
@@ -192,12 +239,31 @@ class RPCClientMixin(RPCMixin):
 
 class RPCServerMixin(RPCMixin):
     __tasks = None
+    __sessions = None
+    __nextClientID = 1024
+    __nextSessionID = 1024
+
+    @property
+    def nextClientID(self):
+        self.__nextClientID += 1
+        return self.__nextClientID
+
+    @property
+    def nextSessionID(self):
+        self.__nextSessionID += 1
+        return self.__nextSessionID
 
     @property
     def tasks(self):
         if self.__tasks is None:
             self.__tasks = {}
         return self.__tasks
+
+    @property
+    def sessions(self):
+        if self.__sessions is None:
+            self.__sessions = {}
+        return self.__sessions
 
     def createTask(self, msgID, coro, timeout=0):
         """
@@ -272,16 +338,19 @@ class RPCServerMixin(RPCMixin):
                 result = await result
         return result
 
-    async def pong(self, addr):
-        await self.sendto(RPC_PONG, addr)
-
     async def response(self, address, msgID, msg):
         log.debug(f'send response {address}, {msgID.hex()}, {msg}')
         await self.sendto(RPC_RESPONSE + msgID + msg, address)
 
-    def on_ping(self, source, msg):
-        log.debug(f"received ping from {source}")
-        asyncio.ensure_future(self.pong(source), loop=self.loop)
+    def on_connect(self, source, msg):
+        log.debug(f"connect from {source}")
+        if self.auth(source, msg):
+            clientID = self.nextClientID
+        else:
+            clientID = 0
+        asyncio.ensure_future(self.sendto(RPC_WELCOME + nextMsgID(clientID),
+                                          source),
+                              loop=self.loop)
 
     def on_request(self, source, msgID, msg):
         """
@@ -295,6 +364,9 @@ class RPCServerMixin(RPCMixin):
     def on_shutdown(self, source, msgID, roleAuth):
         if self.is_admin(source, roleAuth):
             raise SystemExit(0)
+
+    def auth(self, source, authkey):
+        return True
 
     def is_admin(self, source, roleAuth):
         return True

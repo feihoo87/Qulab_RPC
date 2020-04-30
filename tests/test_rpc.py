@@ -57,12 +57,18 @@ class MySrv:
         finally:
             pass
 
-    # @contextlib.asynccontextmanager
-    # async def async_context(self, x):
-    #     try:
-    #         yield x
-    #     finally:
-    #         pass
+    async def async_context(self, x):
+        class AContext():
+            def __init__(self, x):
+                self.x = x
+
+            async def __aenter__(self):
+                return self.x
+
+            async def __aexit__(self, exc_type, exc_value, traceback):
+                pass
+
+        return AContext(x)
 
 
 @pytest.fixture()
@@ -112,6 +118,8 @@ async def test_zmqclient(server, event_loop):
     c = ZMQClient('tcp://127.0.0.1:%d' % server.port,
                   timeout=0.7,
                   loop=event_loop)
+    await c.connect()
+    assert c._zmq_client.clientID > 1024
     assert 8 == await c.add(3, 5)
     assert 9 == await c.add_async(4, 5)
     assert 13 == await c.add_fut(6, 7)

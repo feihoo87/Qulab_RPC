@@ -6,6 +6,7 @@ import zmq
 import zmq.asyncio
 
 from .rpc import RPCClientMixin
+from .exceptions import QuLabRPCError
 
 log = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -68,6 +69,8 @@ class ZMQRPCCallable:
     def __init__(self, methodName, owner):
         self.methodName = methodName
         self.owner = owner
+        self.fut = None
+        self.sessionID = 0
 
     async def call(self, *args, **kw):
         async with self.owner.lock:
@@ -75,10 +78,34 @@ class ZMQRPCCallable:
                 self.owner._zmq_client.addr, self.methodName, args, kw)
 
     def __call__(self, *args, **kw):
-        return self.call(*args, **kw)
+        self.fut = asyncio.ensure_future(self.call(*args, **kw))
+        return self
 
     def __getattr__(self, name):
         return ZMQRPCCallable(f"{self.methodName}.{name}", self.owner)
+
+    def __await__(self):
+        return self.fut.__await__()
+
+    async def __aenter__(self):
+        if not self.fut.done():
+            Type, self.sessionID = await self.fut
+            if Type != "context":
+                raise QuLabRPCError('not a context manager')
+        return self
+
+    async def __aexit__(self, exc_type, exc_value, traceback):
+        print('exit')
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        if not self.fut.done():
+            Type, self.sessionID = await self.fut
+            if Type != "iter":
+                raise QuLabRPCError('not a iter')
+        raise StopAsyncIteration
 
 
 class ZMQClient():
@@ -90,3 +117,6 @@ class ZMQClient():
 
     def __getattr__(self, name):
         return ZMQRPCCallable(name, self)
+
+    async def connect(self):
+        await self._zmq_client.connect(self._zmq_client.addr)
