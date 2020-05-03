@@ -66,46 +66,58 @@ class FakeLock():
 
 
 class ZMQRPCCallable:
-    def __init__(self, methodName, owner):
+    def __init__(self, methodName, owner, sessionID=0):
         self.methodName = methodName
         self.owner = owner
         self.fut = None
-        self.sessionID = 0
+        self.sessionID = sessionID
+        self.Type = None
 
-    async def call(self, *args, **kw):
+    async def remoteCall(self, methodName, *args, **kw):
         async with self.owner.lock:
             return await self.owner._zmq_client.remoteCall(
-                self.owner._zmq_client.addr, self.methodName, args, kw)
+                self.owner._zmq_client.addr, methodName, self.sessionID, args,
+                kw)
 
     def __call__(self, *args, **kw):
-        self.fut = asyncio.ensure_future(self.call(*args, **kw))
+        self.fut = asyncio.ensure_future(
+            self.remoteCall(self.methodName, *args, **kw))
         return self
 
     def __getattr__(self, name):
-        return ZMQRPCCallable(f"{self.methodName}.{name}", self.owner)
+        return ZMQRPCCallable(f"{self.methodName}.{name}", self.owner,
+                              self.sessionID)
 
     def __await__(self):
         return self.fut.__await__()
 
     async def __aenter__(self):
         if not self.fut.done():
-            Type, self.sessionID = await self.fut
-            if Type != "context":
-                raise QuLabRPCError('not a context manager')
+            self.Type, self.sessionID = await self.fut
+        if "AsyncContextManager" not in self.Type and "ContextManager" not in self.Type:
+            raise QuLabRPCError('not a context manager')
         return self
 
     async def __aexit__(self, exc_type, exc_value, traceback):
-        print('exit')
+        await self.remoteCall(f"{self.methodName}.__aexit__", None, None, None)
 
     def __aiter__(self):
         return self
 
     async def __anext__(self):
         if not self.fut.done():
-            Type, self.sessionID = await self.fut
-            if Type != "iter":
-                raise QuLabRPCError('not a iter')
-        raise StopAsyncIteration
+            self.Type, self.sessionID = await self.fut
+        if "AsyncIterator" not in self.Type and "Iterator" not in self.Type:
+            raise QuLabRPCError('not a iter')
+        try:
+            if "AsyncIterator" in self.Type:
+                return await self.remoteCall(f"{self.methodName}.__anext__")
+            else:
+                return await self.remoteCall(f"{self.methodName}.__next__")
+        except Exception as e:
+            for a in e.args:
+                print(a)
+            raise StopAsyncIteration
 
 
 class ZMQClient():

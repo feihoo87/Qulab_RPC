@@ -1,11 +1,13 @@
 import asyncio
 import logging
 from concurrent.futures import ThreadPoolExecutor
+from typing import AsyncContextManager, AsyncIterator, ContextManager, Iterator
 
 import zmq
 import zmq.asyncio
 
-from .rpc import RPCServerMixin
+from .rpc import RPCServerMixin, parseMsgID
+from .exceptions import QuLabRPCServerError
 
 log = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -26,12 +28,46 @@ class ZMQServer(RPCServerMixin):
     async def sendto(self, data, address):
         self.zmq_socket.send_multipart([address, data])
 
-    def getRequestHandler(self, methodNane, **kw):
-        path = methodNane.split('.')
-        ret = getattr(self._module, path[0])
-        for n in path[1:]:
-            ret = getattr(ret, n)
-        return ret
+    def getRequestHandler(self, methodNane, source, msgID, args=(), kw={}):
+        clientID, sessionID, msgIndex = parseMsgID(msgID)
+        if sessionID <= 1024:
+            path = methodNane.split('.')
+            ret = getattr(self._module, path[0])
+            for n in path[1:]:
+                ret = getattr(ret, n)
+            return ret
+        elif (clientID, sessionID) in self.sessions:
+            Type, method, result = self.sessions[(clientID, sessionID)]
+            if methodNane.startswith(method):
+                return self.sessionHandler(Type, methodNane, result)
+            else:
+                raise QuLabRPCServerError("session error")
+        else:
+            raise QuLabRPCServerError("session not found")
+
+    def sessionHandler(self, Type, methodNane, result):
+        methodNane = methodNane.split('.')[-1]
+        return getattr(result, methodNane)
+
+    def processResult(self, result, method, msgID):
+        if not isinstance(
+                result,
+            (AsyncContextManager, AsyncIterator, ContextManager, Iterator)):
+            return result
+
+        clientID, sessionID, msgIndex = parseMsgID(msgID)
+        Type = []
+        if isinstance(result, AsyncContextManager):
+            Type.append('AsyncContextManager')
+        elif isinstance(result, AsyncIterator):
+            Type.append('AsyncIterator')
+        elif isinstance(result, ContextManager):
+            Type.append('ContextManager')
+        elif isinstance(result, Iterator):
+            Type.append('Iterator')
+        Type = tuple(Type)
+        sessionID = self.createSession(clientID, (Type, method, result))
+        return (Type, sessionID)
 
     @property
     def loop(self):

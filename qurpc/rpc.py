@@ -169,20 +169,20 @@ class RPCClientMixin(RPCMixin):
     def setTimeout(self, timeout=10):
         self._client_defualt_timeout = timeout
 
-    def remoteCall(self, addr, methodNane, args=(), kw={}):
+    def remoteCall(self, addr, methodNane, sessionID=0, args=(), kw={}):
         if 'timeout' in kw:
             timeout = kw['timeout']
         else:
             timeout = self._client_defualt_timeout
         msg = pack((methodNane, args, kw))
-        msgID = nextMsgID(self.clientID)
+        msgID = nextMsgID(self.clientID, sessionID)
         asyncio.ensure_future(self.request(addr, msgID, msg), loop=self.loop)
         return self.createPending(addr, msgID, timeout)
 
     async def connect(self, addr, authkey=b"", timeout=None):
         if timeout is None:
             timeout = self._client_defualt_timeout
-        await self.sendto(RPC_CONNECT+authkey, addr)
+        await self.sendto(RPC_CONNECT + authkey, addr)
         fut = self.createPending(addr, addr, timeout, False)
         msgID = await fut
         clientID, *_ = parseMsgID(msgID)
@@ -287,6 +287,14 @@ class RPCServerMixin(RPCMixin):
         if msgID in self.tasks:
             self.tasks[msgID].cancel()
 
+    def createSession(self, clientID, obj):
+        sessionID = self.nextSessionID
+        self.sessions[(clientID, sessionID)] = obj
+        return sessionID
+
+    def removeSession(self, clientID, sessionID):
+        del self.sessions[(clientID, sessionID)]
+
     def close(self):
         self.stop()
         for task in list(self.tasks.values()):
@@ -312,6 +320,9 @@ class RPCServerMixin(RPCMixin):
         You should implement this method yourself.
         """
 
+    def processResult(self, result, method, msgID):
+        return result
+
     async def handle_request(self, source, msgID, method, args, kw):
         """
         Handle a request from source.
@@ -319,7 +330,8 @@ class RPCServerMixin(RPCMixin):
         try:
             func = self.getRequestHandler(method, source=source, msgID=msgID)
             result = await self.callMethod(func, *args, **kw)
-        except QuLabRPCError as e:
+            result = self.processResult(result, method, msgID)
+        except (QuLabRPCError, QuLabRPCServerError) as e:
             result = e
         except Exception as e:
             result = QuLabRPCServerError.make(e)
