@@ -32,6 +32,7 @@ Server
 ```python
 import asyncio
 import math
+from qurpc import ZMQServer
 
 
 def start(loop):
@@ -55,6 +56,9 @@ if __name__ == "__main__":
 
 Client
 ```python
+from qurpc import ZMQClient
+
+addr = "tcp://127.0.0.1:8765"
 client = ZMQClient(addr)
 
 y = await client.sin(3.14)
