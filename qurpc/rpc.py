@@ -2,6 +2,7 @@ import asyncio
 import functools
 import inspect
 import logging
+import platform
 import struct
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable
@@ -9,6 +10,9 @@ from collections.abc import Awaitable
 from .exceptions import QuLabRPCError, QuLabRPCServerError, QuLabRPCTimeout
 from .serialize import pack, unpack
 from .utils import acceptArg
+
+if platform.system() == "Windows":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 log = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
