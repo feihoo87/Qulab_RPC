@@ -154,7 +154,7 @@ class RPCClientMixin(RPCMixin):
             if cancelRemote:
                 self.cancelRemoteTask(addr, msgID)
             if not fut.done():
-                fut.set_exception(QuLabRPCTimeout('Time out.'))
+                fut.set_exception(QuLabRPCTimeout(f'Wait response from {addr} timeout.'))
 
     def cancelRemoteTask(self, addr, msgID):
         """
