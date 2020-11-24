@@ -101,5 +101,5 @@ class ZMQServer(RPCServerMixin):
             self.set_socket(sock)
             while True:
                 addr, data = await sock.recv_multipart()
-                log.debug('received data from %r' % addr.hex())
+                log.debug('received %d bytes data from %r' % (len(data), addr.hex()))
                 self.handle(addr, data)

@@ -103,6 +103,8 @@ class RPCMixin(ABC):
         handler = self.__rpc_handlers.get(msg_type, None)
         if handler is not None:
             getattr(self, handler)(source, *args)
+        else:
+            log.error(f'No handler found for request {msg_type} from {source}')
 
     async def pong(self, addr):
         await self.sendto(RPC_PONG, addr)
