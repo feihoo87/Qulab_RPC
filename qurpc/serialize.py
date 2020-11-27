@@ -117,10 +117,10 @@ try:
         dtype = x.dtype
         if isinstance(dtype, np.dtype):
             dtype = dtype.type
-        return packz((_dtype_map1[dtype], x.shape, x.tobytes()))
+        return pack((_dtype_map1[dtype], x.shape, x.data))
 
     def decode_ndarray(buff: bytes) -> np.ndarray:
-        t, shape, buff = unpackz(buff)
+        t, shape, buff = unpack(buff)
         x = np.frombuffer(buff)
         x.dtype = _dtype_map2[t]
         x.shape = shape
