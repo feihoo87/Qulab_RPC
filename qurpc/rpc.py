@@ -7,6 +7,7 @@ import struct
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable
 
+from ._version import __version__
 from .exceptions import QuLabRPCError, QuLabRPCServerError, QuLabRPCTimeout
 from .serialize import pack, unpack
 from .utils import acceptArg
@@ -28,6 +29,9 @@ def nextMsgID(clientID, sessionID=0):
 
 
 def parseMsgID(msgID):
+    """
+    return: (clientID, sessionID, msgIndex)
+    """
     return msgIDFormat.unpack(msgID)
 
 
@@ -249,6 +253,9 @@ class RPCServerMixin(RPCMixin):
     __nextClientID = 1024
     __nextSessionID = 1024
 
+    def info(self):
+        return {'version': __version__}
+
     @property
     def nextClientID(self):
         self.__nextClientID += 1
@@ -366,7 +373,8 @@ class RPCServerMixin(RPCMixin):
             clientID = self.nextClientID
         else:
             clientID = 0
-        asyncio.ensure_future(self.sendto(RPC_WELCOME + nextMsgID(clientID),
+        msg = pack(self.info())
+        asyncio.ensure_future(self.sendto(RPC_WELCOME + nextMsgID(clientID) + msg,
                                           source),
                               loop=self.loop)
 
