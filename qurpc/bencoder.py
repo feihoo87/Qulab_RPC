@@ -7,9 +7,108 @@ True
 42
 """
 
-import re
-import string
-import itertools as it
+class Bencached():
+
+    __slots__ = ['bencoded']
+
+    def __init__(self, s):
+        self.bencoded = s
+
+
+def encode_bencached(x, r):
+    r.append(x.bencoded)
+
+
+def encode_int(x, r):
+    r.append(f"i{x}e".encode())
+
+
+def encode_bool(x, r):
+    if x:
+        encode_int(1, r)
+    else:
+        encode_int(0, r)
+
+
+def encode_string(x, r):
+    if isinstance(x, str):
+        x = x.encode()
+    r.extend((str(len(x)).encode(), b':', x))
+
+
+def encode_list(x, r):
+    r.append(b'l')
+    for i in x:
+        encode_func[type(i)](i, r)
+    r.append(b'e')
+
+
+def encode_dict(x, r):
+    r.append(b'd')
+    for k, v in sorted(x.items()):
+        if isinstance(k, str):
+            k = k.encode()
+        r.extend((str(len(k)).encode(), b':', k))
+        encode_func[type(v)](v, r)
+    r.append(b'e')
+
+
+encode_func = {
+    Bencached: encode_bencached,
+    int: encode_int,
+    str: encode_string,
+    bytes: encode_string,
+    list: encode_list,
+    tuple: encode_list,
+    dict: encode_dict,
+    bool: encode_bool
+}
+
+
+def decode_int(x, ptr):
+    ptr += 1
+    end = x.index(b'e', ptr)
+    if x[ptr] == b'-'[0]:
+        if x[ptr + 1] == b'0'[0]:
+            raise ValueError
+    elif x[ptr] == b'0'[0] and end != ptr + 1:
+        raise ValueError
+    n = int(x[ptr:end])
+    return n, end + 1
+
+
+def decode_string(x, ptr):
+    colon = x.index(b':', ptr)
+    n = int(x[ptr:colon])
+    if x[ptr] == b'0'[0] and colon != ptr + 1:
+        raise ValueError
+    colon += 1
+    return x[colon:colon + n], colon + n
+
+
+def decode_list(x, ptr):
+    r, ptr = [], ptr + 1
+    while x[ptr] != b'e'[0]:
+        v, ptr = decode_func[x[ptr]](x, ptr)
+        r.append(v)
+    return r, ptr + 1
+
+
+def decode_dict(x, ptr):
+    r, ptr = {}, ptr + 1
+    while x[ptr] != b'e'[0]:
+        k, ptr = decode_string(x, ptr)
+        if isinstance(k, bytes):
+            k = k.decode()
+        r[k], ptr = decode_func[x[ptr]](x, ptr)
+    return r, ptr + 1
+
+
+
+decode_func = {b'l'[0]: decode_list, b'd'[0]: decode_dict, b'i'[0]: decode_int}
+
+for i in range(10):
+    decode_func[f"{i}".encode()[0]] = decode_string
 
 
 def encode(obj):
@@ -26,24 +125,14 @@ def encode(obj):
             == b'd3:bar4:spam3:fooi42e4:messli1e1:cee'
     True
     """
-
-    if isinstance(obj, int):
-        return b"i" + str(obj).encode() + b"e"
-    elif isinstance(obj, bytes):
-        return str(len(obj)).encode() + b":" + obj
-    elif isinstance(obj, str):
-        return encode(obj.encode("ascii"))
-    elif isinstance(obj, list):
-        return b"l" + b"".join(map(encode, obj)) + b"e"
-    elif isinstance(obj, dict):
-        if all(isinstance(i, bytes) for i in obj.keys()):
-            items = list(obj.items())
-            items.sort()
-            return b"d" + b"".join(map(encode, it.chain(*items))) + b"e"
-        else:
-            raise ValueError("dict keys should be bytes")
-    raise ValueError(
-        "Allowed types: int, bytes, list, dict; not %s", type(obj))
+    r = []
+    try:
+        encode_func[type(obj)](obj, r)
+    except KeyError:
+        raise ValueError(
+            "Allowed types: int, bytes, list, dict; not %s", type(obj))
+    r = b''.join(r)
+    return r
 
 
 def decode(s):
@@ -55,45 +144,18 @@ def decode(s):
     True
     >>> decode(b'li1eli2eli3eeee')
     [1, [2, [3]]]
-    >>> decode(b'd3:bar4:spam3:fooi42ee') == {b'bar': b'spam', b'foo': 42}
+    >>> decode(b'd3:bar4:spam3:fooi42ee') == {'bar': b'spam', 'foo': 42}
     True
     """
-    def decode_first(s):
-        if s.startswith(b"i"):
-            match = re.match(b"i(-?\\d+)e", s)
-            return int(match.group(1)), s[match.span()[1]:]
-        elif s.startswith(b"l") or s.startswith(b"d"):
-            l = []
-            rest = s[1:]
-            while not rest.startswith(b"e"):
-                elem, rest = decode_first(rest)
-                l.append(elem)
-            rest = rest[1:]
-            if s.startswith(b"l"):
-                return l, rest
-            else:
-                return {i: j for i, j in zip(l[::2], l[1::2])}, rest
-        elif any(s.startswith(i.encode()) for i in string.digits):
-            m = re.match(b"(\\d+):", s)
-            length = int(m.group(1))
-            rest_i = m.span()[1]
-            start = rest_i
-            end = rest_i + length
-            return s[start:end], s[end:]
-        else:
-            raise ValueError("Malformed input.")
-
     if isinstance(s, str):
-        s = s.encode("ascii")
-
-    ret, rest = decode_first(s)
-    if rest:
-        raise ValueError("Malformed input.")
-    return ret
+        s = s.encode()
+    try:
+        r, l = decode_func[s[0]](s, 0)
+    except (IndexError, KeyError, ValueError):
+        raise ValueError("not a valid bencoded string")
+    if l != len(s):
+        raise ValueError("invalid bencoded value (data after valid prefix)")
+    return r
 
 
 __all__ = ['decode', 'encode']
-
-if __name__ == "__main__":
-    import doctest
-    doctest.testmod()
