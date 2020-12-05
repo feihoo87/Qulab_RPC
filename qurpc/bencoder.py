@@ -7,6 +7,7 @@ True
 42
 """
 
+
 class Bencached():
 
     __slots__ = ['bencoded']
@@ -104,7 +105,6 @@ def decode_dict(x, ptr):
     return r, ptr + 1
 
 
-
 decode_func = {b'l'[0]: decode_list, b'd'[0]: decode_dict, b'i'[0]: decode_int}
 
 for i in range(10):
@@ -121,7 +121,7 @@ def encode(obj):
     True
     >>> encode([b'a', 42, [13, 14]]) == b'l1:ai42eli13ei14eee'
     True
-    >>> encode({b'bar': b'spam', b'foo': 42, b'mess': [1, b'c']}) \
+    >>> encode({'bar': b'spam', 'foo': 42, 'mess': [1, b'c']}) \
             == b'd3:bar4:spam3:fooi42e4:messli1e1:cee'
     True
     """
