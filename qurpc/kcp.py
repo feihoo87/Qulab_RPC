@@ -5,14 +5,14 @@ https://github.com/skywind3000/kcp/blob/master/protocol.txt
 KCP has only one kind of segment: both the data and control messages are
 encoded into the same structure and share the same header.
 The KCP packet (aka. segment) structure is as following:
-0   1   2       4               8 (BYTE)
-+---+---+-------+---------------+
-|cmd|use|  frg  |     wnd       |
-+---+---+-------+---------------+   8
-|     ts        |     sn        |
+0   1   2       4       6       8 (BYTE)
++---+---+-------+-------+-------+
+|cmd|frg|  wnd  |      ts       |
++---+---+-------+-------+-------+   8
+|     sn        |     una       |
 +---------------+---------------+  16
-|     una       |     len       |
-+---------------+---------------+  24
+|     len       |               |
++---------------+               |  24
 |                               |
 |        DATA (optional)        |
 |                               |
@@ -23,6 +23,7 @@ The KCP packet (aka. segment) structure is as following:
 - ts: timestamp
 - sn: serial number
 - una: un-acknowledged serial number
+we removed conv which already included in UDP header
 '''
 import time
 import asyncio
@@ -40,7 +41,7 @@ IKCP_CMD_WINS = 84         # cmd: window size (tell)
 IKCP_ASK_SEND = 1          # need to send IKCP_CMD_WASK
 IKCP_ASK_TELL = 2          # need to send IKCP_CMD_WINS
 IKCP_WND_SND = 32
-IKCP_WND_RCV = 65536       # must >= max fragment size
+IKCP_WND_RCV = 128         # must >= max fragment size
 IKCP_MTU_DEF = 1400
 IKCP_ACK_FAST = 3
 IKCP_INTERVAL = 100
@@ -50,7 +51,7 @@ IKCP_THRESH_MIN = 2
 IKCP_PROBE_INIT = 7000     # 7 secs to probe window size
 IKCP_PROBE_LIMIT = 120000  # up to 120 secs to probe window
 
-IKCPPacketHeaderFormat = struct.Struct('<BBHIIIII')
+IKCPPacketHeaderFormat = struct.Struct('<BBHIIII')
 IKCP_OVERHEAD = IKCPPacketHeaderFormat.size
 
 
@@ -88,7 +89,7 @@ class KCPSeg():
         '''
         Encode KCP packet head
         '''
-        return IKCPPacketHeaderFormat.pack(self.cmd, self.frg >> 16, self.frg & 0xffff,
+        return IKCPPacketHeaderFormat.pack(self.cmd, self.frg & 0xff,
                                            self.wnd, self.ts, self.sn, self.una, self.len)
 
     @classmethod
@@ -97,11 +98,11 @@ class KCPSeg():
         Decode KCP packet head
         '''
         assert len(data) >= IKCPPacketHeaderFormat.size
-        cmd, use, frg, wnd, ts, sn, una, length = \
+        cmd, frg, wnd, ts, sn, una, length = \
             IKCPPacketHeaderFormat.unpack(data[:IKCPPacketHeaderFormat.size])
         seg = cls()
         seg.cmd = cmd
-        seg.frg = frg + (use << 16)
+        seg.frg = frg
         seg.wnd = wnd
         seg.ts = ts
         seg.sn = sn
@@ -830,9 +831,9 @@ class KCPProtocol:
         session.input(data)
         data = session.recv()
         if data is not None:
-            self.handler(data, addr)
+            self.handle(data, addr)
 
-    def handler(self, data, addr):
+    def handle(self, data, addr):
         pass
 
     def sendto(self, data, addr):
