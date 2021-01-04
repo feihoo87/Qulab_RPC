@@ -50,6 +50,8 @@ RPC_MSGIDSIZE = msgIDFormat.size
 
 
 class RPCMixin(ABC):
+    info = {}
+
     def start(self):
         pass
 
@@ -160,7 +162,7 @@ class RPCClientMixin(RPCMixin):
             if cancelRemote:
                 self.cancelRemoteTask(addr, msgID)
             if not fut.done():
-                fut.set_exception(QuLabRPCTimeout(f'Wait response from {addr} timeout.'))
+                fut.set_exception(QuLabRPCTimeout(f'Node({self.info}): Wait response from {addr} timeout.'))
 
     def cancelRemoteTask(self, addr, msgID):
         """
@@ -374,7 +376,7 @@ class RPCServerMixin(RPCMixin):
         else:
             clientID = 0
         msg = pack(self.info())
-        asyncio.ensure_future(self.sendto(RPC_WELCOME + nextMsgID(clientID) + msg,
+        asyncio.ensure_future(self.sendto(RPC_WELCOME + nextMsgID(clientID),# + msg,
                                           source),
                               loop=self.loop)
 
